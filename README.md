@@ -1,19 +1,16 @@
 # Task Manager API
 
-A production-ready RESTful API for managing tasks, built with **Django REST Framework**. Features JWT authentication, role-based access control, Swagger/ReDoc documentation, pagination, filtering, and comprehensive test coverage.
+A RESTful API for managing tasks, built with **Django REST Framework**. Features session-based authentication, role-based access control, filtering, and test coverage.
 
 ---
 
 ## Features
 
-- **JWT Authentication** — Secure, stateless auth with access/refresh tokens and token blacklisting on logout
-- **User Roles** — `admin` (full access to all tasks) and `user` (own tasks only)
+- **Session Authentication** — Secure, cookie-based auth using Django's built-in session framework
+- **User Roles** — `admin` (full access to all tasks) and `basic_user` (own tasks only)
 - **Full CRUD** — Create, read, update, and delete tasks
-- **Pagination** — Configurable page size via query params
-- **Filtering & Search** — Filter options
-- **Ordering** — Sort by any field ascending or descending
-- **Swagger + ReDoc** — Interactive API documentation at `/swagger/` and `/docs/ReDoc/`
-- **Unit Tests** — Full coverage of models, auth, and task endpoints
+- **Filtering** — Filter tasks by `completed` status
+- **Unit Tests** — Coverage of auth and task endpoints
 
 ---
 
@@ -21,11 +18,10 @@ A production-ready RESTful API for managing tasks, built with **Django REST Fram
 
 | Layer | Technology |
 |---|---|
-| Framework | Django 4.2 + DRF 3.14 |
-| Auth | djangorestframework-simplejwt |
-| Docs | drf-yasg (Swagger) + drf-spectacular (ReDoc) |
+| Framework | Django + DRF |
+| Auth | Django Session Authentication |
 | Filtering | django-filter |
-| Testing | pytest + pytest-django |
+| Testing | Django TestCase + DRF APITestCase |
 | Database | SQLite (dev) |
 
 ---
@@ -41,33 +37,28 @@ A production-ready RESTful API for managing tasks, built with **Django REST Fram
 
 ```bash
 git clone https://github.com/saxenak569/task-manager-project.git
-cd task-manager-api
+cd task-manager-project
 
 python -m venv venv
-source venv\Scripts\activate
+source venv/bin/activate        # Mac/Linux
+venv\Scripts\activate           # Windows
+
 pip install -r requirements.txt
 ```
 
-### 2. Configure environment variables
-
-```bash
-cp .env.example .env
-# Edit .env and set a strong SECRET_KEY
-```
-
-### 3. Apply migrations
+### 2. Apply migrations
 
 ```bash
 python manage.py migrate
 ```
 
-### 4. Create a superuser (optional)
+### 3. Create a superuser (admin)
 
 ```bash
 python manage.py createsuperuser
 ```
 
-### 5. Run the development server
+### 4. Run the development server
 
 ```bash
 python manage.py runserver
@@ -80,18 +71,8 @@ The API is now available at `http://127.0.0.1:8000/`.
 ## Running Tests
 
 ```bash
-# Run all tests
-python manage.py pytest
+python manage.py test
 ```
-
-## API Documentation
-
-| URL | Description |
-|---|---|
-| `/swagger/` | Swagger UI (interactive) |
-| `/redoc/` | ReDoc (readable) |
-| `/swagger.json` | OpenAPI JSON schema |
-| `/admin/` | Django admin panel |
 
 ---
 
@@ -99,17 +80,15 @@ python manage.py pytest
 
 ### Authentication Endpoints
 
-| Method | Endpoint | Auth | Description |
+| Method | Endpoint | Auth Required | Description |
 |---|---|---|---|
-| POST | `/api/auth/register/` | ❌ | Register a new user |
-| POST | `/api/auth/login/` | ❌ | Obtain JWT tokens |
-| POST | `/api/auth/token/refresh/` | ❌ | Refresh access token |
-| POST | `/api/auth/logout/` | ✅ | Blacklist refresh token |
-| GET/PATCH | `/api/auth/profile/` | ✅ | View/update own profile |
+| POST | `/api/register/` | ❌ | Register a new user |
+| POST | `/api/login/` | ❌ | Login and start a session |
+| POST | `/api/logout/` | ✅ | Logout and clear the session |
 
 ### Task Endpoints
 
-| Method | Endpoint | Auth | Description |
+| Method | Endpoint | Auth Required | Description |
 |---|---|---|---|
 | GET | `/api/tasks/` | ✅ | List tasks (own; admin sees all) |
 | POST | `/api/tasks/` | ✅ | Create a new task |
@@ -125,42 +104,36 @@ python manage.py pytest
 ### Register
 
 ```http
-POST /api/auth/register/
+POST /api/register/
 Content-Type: application/json
 
 {
-  "email": "shiv@example.com",
   "username": "shiv",
   "password": "shiv123",
-  "password_confirm": "shiv123"
+  "role": "basic_user"
 }
 ```
 
 **Response 201:**
 ```json
 {
-  "message": "User registered successfully.",
-  "user": {
-    "id": 1,
-    "email": "shiv@example.com",
-    "username": "shiv",
-    "role": "user",
-    "date_joined": "2026-02-25T10:00:00Z",
-    "is_active": true
-  }
+  "id": 1,
+  "username": "shiv"
 }
 ```
+
+> **Note:** Registering with `"role": "admin"` only grants admin privileges if the request is made by an existing admin (staff) user. Otherwise, the user is created as a `basic_user`.
 
 ---
 
 ### Login
 
 ```http
-POST /api/auth/login/
+POST /api/login/
 Content-Type: application/json
 
 {
-  "email": "shiv@example.com",
+  "username": "shiv",
   "password": "shiv123"
 }
 ```
@@ -168,14 +141,29 @@ Content-Type: application/json
 **Response 200:**
 ```json
 {
-  "access": "eyJhbGciOiJIUzI1NiIs...",
-  "refresh": "eyJhbGciOiJIUzI1NiIs...",
+  "message": "Logged in successfully.",
   "user": {
     "id": 1,
-    "email": "shiv@example.com",
     "username": "shiv",
-    "role": "user"
+    "is_admin": false
   }
+}
+```
+
+> A session cookie (`sessionid`) is set automatically. Include it in all subsequent requests.
+
+---
+
+### Logout
+
+```http
+POST /api/logout/
+```
+
+**Response 200:**
+```json
+{
+  "message": "Logged out successfully."
 }
 ```
 
@@ -185,8 +173,8 @@ Content-Type: application/json
 
 ```http
 POST /api/tasks/
-Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 Content-Type: application/json
+Cookie: sessionid=<your-session-cookie>
 
 {
   "title": "Buy groceries",
@@ -199,42 +187,37 @@ Content-Type: application/json
 ```json
 {
   "id": 1,
+  "user": 1,
   "title": "Buy groceries",
   "description": "Milk, eggs, and bread",
   "completed": false,
-  "created_at": "2024-01-15T10:05:00Z",
-  "updated_at": "2024-01-15T10:05:00Z"
+  "created_at": "2026-02-26T10:05:00Z",
+  "updated_at": "2026-02-26T10:05:00Z"
 }
 ```
 
 ---
 
-### List Tasks with Filtering & Pagination
+### List Tasks with Filtering
 
 ```http
-GET /api/tasks/?completed=false&search=grocery&ordering=-created_at&page=1&page_size=5
-Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+GET /api/tasks/?completed=false
+Cookie: sessionid=<your-session-cookie>
 ```
 
 **Response 200:**
 ```json
-{
-  "count": 12,
-  "next": "http://localhost:8000/api/tasks/?page=2",
-  "previous": null,
-  "results": [
-    {
-      "id": 1,
-      "title": "Buy groceries",
-      "description": "Milk, eggs, and bread",
-      "completed": false,
-      "owner": 1,
-      "owner_email": "shiv@example.com",
-      "created_at": "2024-01-15T10:05:00Z",
-      "updated_at": "2024-01-15T10:05:00Z"
-    }
-  ]
-}
+[
+  {
+    "id": 1,
+    "user": 1,
+    "title": "Buy groceries",
+    "description": "Milk, eggs, and bread",
+    "completed": false,
+    "created_at": "2026-02-26T10:05:00Z",
+    "updated_at": "2026-02-26T10:05:00Z"
+  }
+]
 ```
 
 ---
@@ -243,8 +226,8 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 
 ```http
 PATCH /api/tasks/1/
-Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 Content-Type: application/json
+Cookie: sessionid=<your-session-cookie>
 
 {
   "completed": true
@@ -255,31 +238,12 @@ Content-Type: application/json
 ```json
 {
   "id": 1,
+  "user": 1,
   "title": "Buy groceries",
   "description": "Milk, eggs, and bread",
   "completed": true,
-  "created_at": "2024-01-15T10:05:00Z",
-  "updated_at": "2024-01-15T10:30:00Z"
-}
-```
-
----
-
-### Refresh Token
-
-```http
-POST /api/auth/token/refresh/
-Content-Type: application/json
-
-{
-  "refresh": "eyJhbGciOiJIUzI1NiIs..."
-}
-```
-
-**Response 200:**
-```json
-{
-  "access": "eyJhbGciOiJIUzI1NiIs..."
+  "created_at": "2026-02-26T10:05:00Z",
+  "updated_at": "2026-02-26T10:30:00Z"
 }
 ```
 
@@ -289,27 +253,26 @@ Content-Type: application/json
 
 ```
 task_manager_project/
-├── task_manager_project/                    # Django project config
+├── task_manager_project/
 │   ├── settings.py
 │   ├── urls.py
-│   └── asgi.py
-├── tasks/               
-│   ├── models.py          
+│   └── wsgi.py
+├── tasks/
+│   ├── models.py
 │   ├── serializers.py
 │   ├── views.py
 │   ├── urls.py
-│   ├── tests.py 
+│   ├── tests.py
 │   └── admin.py
 ├── manage.py
-├── requirements.txt
-└── README.md
+└── requirements.txt
 ```
 
 ---
 
 ## User Roles
 
-| Capability | Regular User | Admin |
+| Capability | Basic User | Admin |
 |---|---|---|
 | View own tasks | ✅ | ✅ |
 | Create tasks | ✅ | ✅ |
@@ -317,17 +280,38 @@ task_manager_project/
 | View all users' tasks | ❌ | ✅ |
 | Update/delete any task | ❌ | ✅ |
 
-To create an admin user:
+To create an admin user via the shell:
+
 ```bash
-# Via Django shell
 python manage.py shell -c "
-from users.models import User
-User.objects.create_user(
-    email='admin@example.com',
-    username='admin',
-    password='Admin123',
-    role='admin',
-    is_staff=True
-)
+from django.contrib.auth.models import User
+u = User.objects.create_user(username='admin', password='Admin123')
+u.is_staff = True
+u.save()
 "
 ```
+
+Or simply use:
+
+```bash
+python manage.py createsuperuser
+```
+
+---
+
+## Settings
+
+Ensure the following are configured in `settings.py`:
+
+```python
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+}
+```
+
+`django.contrib.sessions` must be in `INSTALLED_APPS` and `SessionMiddleware` in `MIDDLEWARE` (both are included by default in a standard Django project).
